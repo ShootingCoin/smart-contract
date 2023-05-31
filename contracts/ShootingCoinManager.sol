@@ -12,27 +12,40 @@ import "./interface/IShootingRole.sol";
 import "./interface/IShootingNFT.sol";
 
 contract ShootingCoinManager is Initializable, GameCore, CurrencyController {
-    event Entered(address user, BetInfo betInfo);
+    event Entered(address user, BetInfo betInfo, uint256 salt);
+
+    event Quited(address user, BetInfo betInfo, uint256 salt);
 
     event GameInited(
-        uint256 gameId,
-        address user1,
-        address user2,
+        uint256 indexed gameId,
+        address indexed user1,
+        address indexed user2,
         GameInfo gameInfo
     );
 
     event GameSettled(
-        uint256 gameId,
-        address user1,
-        address user2,
+        uint256 indexed gameId,
+        address indexed user1,
+        address indexed user2,
         GameHistory gameHistory
     );
 
-    function initialize(address roleContract) public initializer {
+    function initialize(
+        address roleContract,
+        uint256 _gameFee,
+        address _feeRecieveAddress
+    ) public initializer {
         shootingRole = roleContract;
+        gameFeePercent = _gameFee;
+        feeRecieveAddress = _feeRecieveAddress;
     }
 
-    function enterGame(address account, BetInfo memory _betInfo) public {
+    function enterGame(
+        address account,
+        BetInfo memory _betInfo,
+        uint256 salt
+    ) public {
+        require(usedSalt[salt] == 0, "salt used");
         require(account == msg.sender, "wrong user");
         if (IShootingRole(shootingRole).isRelayer(account))
             revert("relayer can't play");
@@ -43,7 +56,7 @@ contract ShootingCoinManager is Initializable, GameCore, CurrencyController {
                 require(
                     IERC721Upgradeable(shootingNft).ownerOf(
                         _betInfo.nftSkinId[i]
-                    ) == msg.sender,
+                    ) == account,
                     "not owner"
                 );
             }
@@ -52,7 +65,20 @@ contract ShootingCoinManager is Initializable, GameCore, CurrencyController {
         despositCoin(_betInfo.coinAddress, _betInfo.betAmount);
 
         _enterGame(account, _betInfo);
-        emit Entered(account, _betInfo);
+
+        usedSalt[salt] = 1;
+        emit Entered(account, _betInfo, salt);
+    }
+
+    function quitGame(address account, uint256 salt) public {
+        require(usedSalt[salt] == 1, "not used salt");
+        require(account == msg.sender, "wrong user");
+        if (isOnGame[account] == 0) revert("user is not on game");
+
+        BetInfo memory _betInfo = betInfo[account];
+
+        ditstributeCoin(account, _betInfo.coinAddress, _betInfo.betAmount);
+        emit Quited(account, _betInfo, salt);
     }
 
     function startGame(
@@ -92,8 +118,26 @@ contract ShootingCoinManager is Initializable, GameCore, CurrencyController {
             uint240(block.timestamp)
         );
 
-        ditstributeCoin(user1, user2BetInfo.coinAddress, user1GetAmount);
-        ditstributeCoin(user2, user1BetInfo.coinAddress, user2GetAmount);
+        uint256 user1Share = user1GetAmount -
+            (user1GetAmount * gameFeePercent) /
+            100;
+        uint256 user2Share = user2GetAmount -
+            (user2GetAmount * gameFeePercent) /
+            100;
+
+        ditstributeCoin(
+            feeRecieveAddress,
+            user2BetInfo.coinAddress,
+            user1GetAmount - user1Share
+        );
+        ditstributeCoin(
+            feeRecieveAddress,
+            user1BetInfo.coinAddress,
+            user2GetAmount - user2Share
+        );
+
+        ditstributeCoin(user1, user2BetInfo.coinAddress, user1Share);
+        ditstributeCoin(user2, user1BetInfo.coinAddress, user2Share);
 
         gameHistory[user1].push(_gameHistory);
         gameHistory[user2].push(_gameHistory);
@@ -108,23 +152,30 @@ contract ShootingCoinManager is Initializable, GameCore, CurrencyController {
         return gameInfo[gameId];
     }
 
-    function getBetInfo(address userAccount)
-        public
-        view
-        returns (BetInfo memory)
-    {
+    function getBetInfo(
+        address userAccount
+    ) public view returns (BetInfo memory) {
         return betInfo[userAccount];
     }
 
-    function getHistory(address userAccount)
-        public
-        view
-        returns (GameHistory[] memory)
-    {
+    function getHistory(
+        address userAccount
+    ) public view returns (GameHistory[] memory) {
         return gameHistory[userAccount];
     }
 
     function checkOnGame(address account) public view returns (bool) {
         return isOnGame[account] == 1;
     }
+
+    function updateWhiteList(
+        address coinAddress,
+        bool isWhite
+    ) public onlyAdmin {
+        whitelist[coinAddress] = isWhite;
+    }
+
+    receive() external payable {}
+
+    uint256[50] private __gap;
 }

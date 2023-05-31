@@ -14,7 +14,7 @@ async function main() {
 
   const ShootingCoinManager = await upgrades.deployProxy(
     ShootingCoinManagerToken,
-    [ShootingRole.address]
+    [ShootingRole.address, 5, "0x8D693b69D0042F9A06206347132FB613dFdFAbb7"]
   );
   await ShootingCoinManager.deployed();
 

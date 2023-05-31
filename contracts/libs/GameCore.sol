@@ -6,6 +6,7 @@ import "../interface/IShootingRole.sol";
 contract GameCore {
     address public shootingRole;
     address public shootingNft;
+    address public feeRecieveAddress;
     mapping(address => uint256) public isOnGame;
     //user on game, user address => bet info
     mapping(address => BetInfo) public betInfo;
@@ -14,8 +15,8 @@ contract GameCore {
     mapping(uint256 => GameInfo) public gameInfo;
     //game history
     mapping(address => GameHistory[]) public gameHistory;
-    //coin whitelist
-    mapping(address => bool) public whitelist;
+
+    mapping(uint256 => uint256) public usedSalt;
 
     struct BetInfo {
         address coinAddress;
@@ -82,4 +83,6 @@ contract GameCore {
         delete betInfo[userAccount];
         isOnGame[userAccount] = 0;
     }
+
+    uint256[42] private __gap;
 }
